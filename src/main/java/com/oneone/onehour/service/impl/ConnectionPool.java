@@ -1,41 +1,53 @@
 package com.oneone.onehour.service.impl;
 
-import com.mysql.cj.jdbc.ConnectionImpl;
 import com.oneone.onehour.service.IConnectionPool;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.util.ArrayList;
+import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
 
 public class ConnectionPool implements IConnectionPool {
+    String url;
+    String user;
+    String password;
+
     //使用中的连接
-    private LinkedList<Connection> useConnectionList = new LinkedList<>();
+    private List<Connection> useConnectionList = new LinkedList<>();
     //空闲的连接
-    private LinkedList<Connection> freeConnectionList = new LinkedList<>();
+    private Deque<Connection> freeConnectionList = new LinkedList<>();
 
+    public ConnectionPool(String url, String user, String password,String className) throws Exception {
+        this.url = url;
+        this.user = user;
+        this.password = password;
 
-    @Override
-    public void createConnectPool(String url,String user,String password) {
-        try {
-            Connection connection = DriverManager.getConnection(url,user,password);
-            for(int i = 0;i < 5;i++){
-                freeConnectionList.add(connection);
-            }
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
+        Class.forName(className);
+        for (int i = 0; i < 5; i++) {
+            open();
         }
     }
 
+    private Connection open() throws SQLException {
+        Connection connection = DriverManager.getConnection(url,user,password);
+        freeConnectionList.add(connection);
+        return connection;
+    }
+
+
     @Override
-    public Connection getConnection(String url,String user,String password) {
+    public Connection getConnection() throws Exception{
         if(freeConnectionList == null && freeConnectionList.size() + useConnectionList.size() == 60){
-            return null;
+            throw new Exception("连接池无空余连接");
         }
         if(freeConnectionList.size() < 2){
-            createConnectPool(url,user,password);
+            for (int i = 0; i < 5; i++) {
+                open();
+            }
+        }else {
+            removeFreeConnection();
         }
         Connection connection = freeConnectionList.removeFirst();
         useConnectionList.add(connection);
@@ -48,11 +60,15 @@ public class ConnectionPool implements IConnectionPool {
         freeConnectionList.add(connection);
     }
 
-    @Override
-    public void removeFreeConnection() {
+    private void removeFreeConnection() {
         if(freeConnectionList.size() >= 8){
             for(int i = 0;i < 5;i++){
-                freeConnectionList.remove(freeConnectionList.get(i));
+                Connection connection = freeConnectionList.removeFirst();
+                try {
+                    connection.close();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
             }
         }
     }
